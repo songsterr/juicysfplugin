@@ -212,13 +212,7 @@ void FluidSynthModel::parameterChanged(const String& parameterID, float newValue
         jassert(dynamic_cast<AudioParameterInt*>(param) != nullptr);
         AudioParameterInt* castParam{dynamic_cast<AudioParameterInt*>(param)};
         int value{castParam->get()};
-        int controllerNumber{static_cast<int>(it->second)};
-        
-        fluid_synth_cc(
-            synth.get(),
-            channel,
-            controllerNumber,
-            value);
+        setControllerValue(static_cast<int>(it->second), value);
     }
 }
 
@@ -256,12 +250,15 @@ void FluidSynthModel::valueTreePropertyChanged(ValueTree& treeWhosePropertyHasCh
     }
 }
 
+// Every channel: fluidsynth inits sound ctrls to 64, which our default modulators make huge.
 void FluidSynthModel::setControllerValue(int controller, int value) {
-    fluid_synth_cc(
-        synth.get(),
-        channel,
-        controller,
-        value);
+    for (int ch{0}; ch < fluid_synth_count_midi_channels(synth.get()); ch++) {
+        fluid_synth_cc(
+            synth.get(),
+            ch,
+            controller,
+            value);
+    }
 }
 
 int FluidSynthModel::getChannel() {
@@ -345,22 +342,24 @@ void FluidSynthModel::processBlock(AudioBuffer<float>& buffer, MidiBuffer& midiM
 
     for (MidiBuffer::Iterator i{midiMessages}; i.getNextEvent(m, time);) {
         DEBUG_PRINT(m.getDescription());
+        // JUCE channels are 1-based; fluidsynth's are 0-based.
+        const int midiChannel{m.getChannel() - 1};
         
         if (m.isNoteOn()) {
             fluid_synth_noteon(
                 synth.get(),
-                channel,
+                midiChannel,
                 m.getNoteNumber(),
                 m.getVelocity());
         } else if (m.isNoteOff()) {
             fluid_synth_noteoff(
                 synth.get(),
-                channel,
+                midiChannel,
                 m.getNoteNumber());
         } else if (m.isController()) {
             fluid_synth_cc(
                 synth.get(),
-                channel,
+                midiChannel,
                 m.getControllerNumber(),
                 m.getControllerValue());
 
@@ -381,7 +380,7 @@ void FluidSynthModel::processBlock(AudioBuffer<float>& buffer, MidiBuffer& midiM
 #endif
             int result{fluid_synth_program_change(
                 synth.get(),
-                channel,
+                midiChannel,
                 m.getProgramChangeNumber())};
             if (result == FLUID_OK) {
                 RangedAudioParameter *param{valueTreeState.getParameter("preset")};
@@ -392,17 +391,17 @@ void FluidSynthModel::processBlock(AudioBuffer<float>& buffer, MidiBuffer& midiM
         } else if (m.isPitchWheel()) {
             fluid_synth_pitch_bend(
                 synth.get(),
-                channel,
+                midiChannel,
                 m.getPitchWheelValue());
         } else if (m.isChannelPressure()) {
             fluid_synth_channel_pressure(
                 synth.get(),
-                channel,
+                midiChannel,
                 m.getChannelPressureValue());
         } else if (m.isAftertouch()) {
             fluid_synth_key_pressure(
                 synth.get(),
-                channel,
+                midiChannel,
                 m.getNoteNumber(),
                 m.getAfterTouchValue());
 //        } else if (m.isMetaEvent()) {
