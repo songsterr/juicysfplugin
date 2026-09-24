@@ -29,11 +29,15 @@ RUN LLVM_MINGW_VER=$LLVM_MINGW_VER ./download_llvm_mingw.sh download_llvm_mingw.
 # we pull from public GPL/BSD projects that ship them. This is grey-area
 # licensing; the resulting DLL must not be published without a VST2 license
 # decision.
+# IPv4 first + short timeouts: raw.githubusercontent.com has AAAA records, and
+# where the build network's IPv6 egress is broken each file otherwise waits out
+# IPv6 connect timeouts (~27 min for the three on builderr).
 FROM wgetter AS get_vst2_sdk
 RUN mkdir -p /VST2_SDK/pluginterfaces/vst2.x && \
-    wget -q -O /VST2_SDK/pluginterfaces/vst2.x/aeffect.h    https://raw.githubusercontent.com/pac-dev/protoplug/master/Frameworks/vstsdk2.4_minimal/pluginterfaces/vst2.x/aeffect.h && \
-    wget -q -O /VST2_SDK/pluginterfaces/vst2.x/aeffectx.h   https://raw.githubusercontent.com/pac-dev/protoplug/master/Frameworks/vstsdk2.4_minimal/pluginterfaces/vst2.x/aeffectx.h && \
-    wget -q -O /VST2_SDK/pluginterfaces/vst2.x/vstfxstore.h https://raw.githubusercontent.com/R-Tur/VST_SDK_2.4/master/pluginterfaces/vst2.x/vstfxstore.h
+    WGET="wget -q --prefer-family=IPv4 --timeout=30 --tries=3" && \
+    $WGET -O /VST2_SDK/pluginterfaces/vst2.x/aeffect.h    https://raw.githubusercontent.com/pac-dev/protoplug/master/Frameworks/vstsdk2.4_minimal/pluginterfaces/vst2.x/aeffect.h && \
+    $WGET -O /VST2_SDK/pluginterfaces/vst2.x/aeffectx.h   https://raw.githubusercontent.com/pac-dev/protoplug/master/Frameworks/vstsdk2.4_minimal/pluginterfaces/vst2.x/aeffectx.h && \
+    $WGET -O /VST2_SDK/pluginterfaces/vst2.x/vstfxstore.h https://raw.githubusercontent.com/R-Tur/VST_SDK_2.4/master/pluginterfaces/vst2.x/vstfxstore.h
 
 FROM ubuntu:$UBUNTU_VER AS gitter
 RUN apt-get update -qq && \
