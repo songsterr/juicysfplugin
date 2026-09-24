@@ -13,3 +13,17 @@ workflows:
             path: libjuicysfplugin.dll
           - name: sha256
             path: libjuicysfplugin.dll.sha256
+      # render-server deploy pulls the dll from s3://songsterr-renderer-distr/ci/juicysfplugin/
+      # (songsterr/songsterr-infra#560). The role admits master/main only and scopes writes
+      # to ci/<repo>/ via the token's session tag. The AWS CLI does the OIDC exchange itself
+      # from AWS_WEB_IDENTITY_TOKEN_FILE; no set -x, the file holds the token.
+      upload:
+        when:
+          branch: [master, main]
+        image: alpine:3.22
+        commands:
+          - apk add --no-cache aws-cli
+          - printf '%s' "$BUILDERR_ID_TOKEN" > /tmp/oidc-token
+          - export AWS_WEB_IDENTITY_TOKEN_FILE=/tmp/oidc-token AWS_ROLE_ARN=arn:aws:iam::722983754809:role/builderr-renderer-distr-ci AWS_ROLE_SESSION_NAME=builderr-$BUILDERR_BUILD_ID AWS_DEFAULT_REGION=eu-central-1
+          - aws s3 cp /var/www/libjuicysfplugin.dll s3://songsterr-renderer-distr/ci/juicysfplugin/libjuicysfplugin.dll
+          - aws s3 cp /var/www/libjuicysfplugin.dll.sha256 s3://songsterr-renderer-distr/ci/juicysfplugin/libjuicysfplugin.dll.sha256
