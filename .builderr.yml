@@ -1,0 +1,15 @@
+workflows:
+  build:
+    pipeline:
+      dll:
+        image: docker:28.3
+        docker: true
+        commands:
+          - docker buildx build -f win32.Dockerfile --target output --output type=local,dest=out .
+          - cp out/win_x64/VST2/libjuicysfplugin.dll /var/www/
+          - cd /var/www && sha256sum libjuicysfplugin.dll > libjuicysfplugin.dll.sha256 && cat libjuicysfplugin.dll.sha256
+        artifacts:
+          - name: libjuicysfplugin.dll
+            path: libjuicysfplugin.dll
+          - name: sha256
+            path: libjuicysfplugin.dll.sha256

@@ -16,6 +16,11 @@ Output lands in `./out/win_x64/` (VST2, VST3, Standalone, licenses).
 First build is slow (~15–40 min) because JUCE and FluidSynth are compiled from
 source. Subsequent builds hit the BuildKit layer cache.
 
+## CI
+
+Builderr (`.builderr.yml`) runs the same command on every push and publishes
+`libjuicysfplugin.dll` plus its `.sha256` as build artifacts.
+
 ## Behind a proxy or with unreliable host DNS
 
 Pass the proxy through and share the host network stack:
