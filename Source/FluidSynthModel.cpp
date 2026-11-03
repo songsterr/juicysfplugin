@@ -6,6 +6,7 @@
 #include <iterator>
 #include <fluidsynth.h>
 #include "FluidSynthModel.h"
+#include "MidiBlockSchedule.h"
 #include "MidiConstants.h"
 #include "Util.h"
 
@@ -335,106 +336,109 @@ void FluidSynthModel::setSampleRate(float sampleRate) {
     currentSampleRate = sampleRate;
 }
 
-void FluidSynthModel::processBlock(AudioBuffer<float>& buffer, MidiBuffer& midiMessages) {
-    MidiBuffer processedMidi;
-    int time;
-    MidiMessage m;
+void FluidSynthModel::handleMidiMessage(const MidiMessage& m) {
+    DEBUG_PRINT(m.getDescription());
+    // JUCE channels are 1-based; fluidsynth's are 0-based.
+    const int midiChannel{m.getChannel() - 1};
+    
+    if (m.isNoteOn()) {
+        fluid_synth_noteon(
+            synth.get(),
+            midiChannel,
+            m.getNoteNumber(),
+            m.getVelocity());
+    } else if (m.isNoteOff()) {
+        fluid_synth_noteoff(
+            synth.get(),
+            midiChannel,
+            m.getNoteNumber());
+    } else if (m.isController()) {
+        fluid_synth_cc(
+            synth.get(),
+            midiChannel,
+            m.getControllerNumber(),
+            m.getControllerValue());
 
-    for (MidiBuffer::Iterator i{midiMessages}; i.getNextEvent(m, time);) {
-        DEBUG_PRINT(m.getDescription());
-        // JUCE channels are 1-based; fluidsynth's are 0-based.
-        const int midiChannel{m.getChannel() - 1};
-        
-        if (m.isNoteOn()) {
-            fluid_synth_noteon(
-                synth.get(),
-                midiChannel,
-                m.getNoteNumber(),
-                m.getVelocity());
-        } else if (m.isNoteOff()) {
-            fluid_synth_noteoff(
-                synth.get(),
-                midiChannel,
-                m.getNoteNumber());
-        } else if (m.isController()) {
-            fluid_synth_cc(
-                synth.get(),
-                midiChannel,
-                m.getControllerNumber(),
-                m.getControllerValue());
-
-            fluid_midi_control_change controllerNum{static_cast<fluid_midi_control_change>(m.getControllerNumber())};
-            if (auto it{controllerToParam.find(controllerNum)};
-                it != end(controllerToParam)) {
-                String parameterID{it->second};
-                RangedAudioParameter *param{valueTreeState.getParameter(parameterID)};
-                jassert(dynamic_cast<AudioParameterInt*>(param) != nullptr);
-                AudioParameterInt* castParam{dynamic_cast<AudioParameterInt*>(param)};
-                *castParam = m.getControllerValue();
-            }
-        } else if (m.isProgramChange()) {
+        fluid_midi_control_change controllerNum{static_cast<fluid_midi_control_change>(m.getControllerNumber())};
+        if (auto it{controllerToParam.find(controllerNum)};
+            it != end(controllerToParam)) {
+            String parameterID{it->second};
+            RangedAudioParameter *param{valueTreeState.getParameter(parameterID)};
+            jassert(dynamic_cast<AudioParameterInt*>(param) != nullptr);
+            AudioParameterInt* castParam{dynamic_cast<AudioParameterInt*>(param)};
+            *castParam = m.getControllerValue();
+        }
+    } else if (m.isProgramChange()) {
 #if JUCE_DEBUG
-            String debug{"MIDI program change: "};
-            debug << m.getProgramChangeNumber();
-            Logger::outputDebugString(debug);
+        String debug{"MIDI program change: "};
+        debug << m.getProgramChangeNumber();
+        Logger::outputDebugString(debug);
 #endif
-            int result{fluid_synth_program_change(
-                synth.get(),
-                midiChannel,
-                m.getProgramChangeNumber())};
-            if (result == FLUID_OK) {
-                RangedAudioParameter *param{valueTreeState.getParameter("preset")};
-                jassert(dynamic_cast<AudioParameterInt*>(param) != nullptr);
-                AudioParameterInt* castParam{dynamic_cast<AudioParameterInt*>(param)};
-                *castParam = m.getProgramChangeNumber();
-            }
-        } else if (m.isPitchWheel()) {
-            fluid_synth_pitch_bend(
-                synth.get(),
-                midiChannel,
-                m.getPitchWheelValue());
-        } else if (m.isChannelPressure()) {
-            fluid_synth_channel_pressure(
-                synth.get(),
-                midiChannel,
-                m.getChannelPressureValue());
-        } else if (m.isAftertouch()) {
-            fluid_synth_key_pressure(
-                synth.get(),
-                midiChannel,
-                m.getNoteNumber(),
-                m.getAfterTouchValue());
+        int result{fluid_synth_program_change(
+            synth.get(),
+            midiChannel,
+            m.getProgramChangeNumber())};
+        if (result == FLUID_OK) {
+            RangedAudioParameter *param{valueTreeState.getParameter("preset")};
+            jassert(dynamic_cast<AudioParameterInt*>(param) != nullptr);
+            AudioParameterInt* castParam{dynamic_cast<AudioParameterInt*>(param)};
+            *castParam = m.getProgramChangeNumber();
+        }
+    } else if (m.isPitchWheel()) {
+        fluid_synth_pitch_bend(
+            synth.get(),
+            midiChannel,
+            m.getPitchWheelValue());
+    } else if (m.isChannelPressure()) {
+        fluid_synth_channel_pressure(
+            synth.get(),
+            midiChannel,
+            m.getChannelPressureValue());
+    } else if (m.isAftertouch()) {
+        fluid_synth_key_pressure(
+            synth.get(),
+            midiChannel,
+            m.getNoteNumber(),
+            m.getAfterTouchValue());
 //        } else if (m.isMetaEvent()) {
 //            fluid_midi_event_t *midi_event{new_fluid_midi_event()};
 //            fluid_midi_event_set_type(midi_event, static_cast<int>(MIDI_SYSTEM_RESET));
 //            fluid_synth_handle_midi_event(synth.get(), midi_event);
 //            delete_fluid_midi_event(midi_event);
-        } else if (m.isSysEx()) {
-            fluid_synth_sysex(
-                synth.get(),
-                reinterpret_cast<const char*>(m.getSysExData()),
-                m.getSysExDataSize(),
-                nullptr, // no response pointer because we have no interest in handling response currently
-                nullptr, // no response_len pointer because we have no interest in handling response currently
-                nullptr, // no handled pointer because we have no interest in handling response currently
-                static_cast<int>(false));
-        }
+    } else if (m.isSysEx()) {
+        fluid_synth_sysex(
+            synth.get(),
+            reinterpret_cast<const char*>(m.getSysExData()),
+            m.getSysExDataSize(),
+            nullptr, // no response pointer because we have no interest in handling response currently
+            nullptr, // no response_len pointer because we have no interest in handling response currently
+            nullptr, // no handled pointer because we have no interest in handling response currently
+            static_cast<int>(false));
     }
+}
 
-    // fluid_synth_get_cc(fluidSynth, 0, 73, &pval);
-    // Logger::outputDebugString ( juce::String::formatted("hey: %d\n", pval) );
-
+void FluidSynthModel::processBlock(AudioBuffer<float>& buffer, MidiBuffer& midiMessages) {
     // Use fluid_synth_write_float — the same API the CLI file renderer uses.
     // It automatically mixes reverb/chorus into the dry output (unlike
     // fluid_synth_process, which since 2.1.0 also requires the caller to zero
     // the output buffers on every call). Bit-identical to `fluidsynth -F` in
     // parity tests, whereas fluid_synth_process(nfx=0, ...) dropped effects.
     jassert(buffer.getNumChannels() >= 2);
-    fluid_synth_write_float(
-        synth.get(),
+    renderBlockAtEventTimes(
+        started,
         buffer.getNumSamples(),
-        buffer.getWritePointer(0), 0, 1,
-        buffer.getWritePointer(1), 0, 1);
+        midiMessages,
+        [](const juce::MidiMessageMetadata& event) { return event.samplePosition; },
+        [](const juce::MidiMessageMetadata& event) { return event.getMessage().isNoteOn(); },
+        [this](const juce::MidiMessageMetadata& event) { handleMidiMessage(event.getMessage()); },
+        [this, &buffer](int start, int length) {
+            fluid_synth_write_float(
+                synth.get(),
+                length,
+                buffer.getWritePointer(0), start, 1,
+                buffer.getWritePointer(1), start, 1);
+        },
+        [&buffer](int start, int length) { buffer.clear(start, length); });
 }
 
 int FluidSynthModel::getNumPrograms()

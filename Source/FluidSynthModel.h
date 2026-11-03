@@ -80,5 +80,8 @@ private:
     int sfont_id;
     unsigned int channel;
 
+    void handleMidiMessage(const MidiMessage& m);
+    bool started{false};
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FluidSynthModel)
 };
