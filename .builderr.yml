@@ -1,6 +1,11 @@
 workflows:
   build:
     pipeline:
+      test:
+        image: gcc:14
+        commands:
+          - g++ -std=c++17 -Wall -Wextra -Werror -ISource test/MidiBlockScheduleTest.cpp -o /tmp/midi-block-schedule-test
+          - /tmp/midi-block-schedule-test
       dll:
         image: docker:28.3
         docker: true
